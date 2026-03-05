@@ -3,6 +3,8 @@
 ### Lab 0 (basat en material de Gemma Rotger)                      ###
 ######################################################################
 
+# Codi fet per: Jan Garcia Comas. 
+# NIU: 1708397
 
 # Hello! Welcome to the computer vision LAB. 
 import time

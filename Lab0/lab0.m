@@ -3,6 +3,9 @@
 %%% Lab 0 (basat en les pr�ctiques de Gemma Rotger)                %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+% Codi fet per: Jan Garcia Comas. 
+% NIU: 1708397
+
 %% 
 % Hello! Welcome to the computer vision LAB. This is a section, and 
 % you can execute it using the run section button on the top panel. If 
