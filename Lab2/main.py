@@ -7,18 +7,15 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INPUT_DIR = os.path.join(BASE_DIR, "fotos", "input")
 OUTPUT_DIR = os.path.join(BASE_DIR, "fotos", "output")
 
-
-def split_channels(img):
-    h = img.shape[0] // 3
-    return img[0:h], img[h:2*h], img[2*h:3*h]
-
-
 def crop_borders(img, percent=0.1):
     h, w = img.shape
     dh = int(h * percent)
     dw = int(w * percent)
     return img[dh:h-dh, dw:w-dw]
 
+def split_channels(img):
+    h = img.shape[0] // 3
+    return img[0:h], img[h:2*h], img[2*h:3*h]
 
 def shift_image(img, dx, dy):
     h, w = img.shape
@@ -169,6 +166,8 @@ def process_image(path):
     b, g, r = split_channels(img)
     b, g, r = align_channels(b, g, r)
     b, g, r = crop_valid_region(b, g, r)
+
+    b = crop_borders(b, 0.05); g = crop_borders(g, 0.05); r = crop_borders(r, 0.05)
 
     color = np.dstack((b, g, r))
 
