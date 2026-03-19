@@ -9,10 +9,6 @@ INPUT_DIR = os.path.join(BASE_DIR, "fotos", "input")
 OUTPUT_DIR = os.path.join(BASE_DIR, "fotos", "output")
 
 
-# -------------------------
-# FUNCIONS BÀSIQUES
-# -------------------------
-
 def crop_borders(img, percent=0.1):
     h, w = img.shape  # obtenir alçada i amplada
 
@@ -56,16 +52,12 @@ def shift_image(img, dx, dy):
     return result
 
 
-# -------------------------
-# COMPARACIÓ D'IMATGES
-# -------------------------
-
 def ncc(a, b):
     # convertir a float per evitar problemes de tipus
     a = a.astype(np.float32)
     b = b.astype(np.float32)
 
-    # restar la mitjana → centrar les dades
+    # restar la mitjana per centrar les dades
     a = a - np.mean(a)
     b = b - np.mean(b)
 
@@ -80,11 +72,8 @@ def ncc(a, b):
     return np.sum(a*b) / denom
 
 
-# -------------------------
-# CERCA DEL DESPLAÇAMENT
-# -------------------------
 
-def find_shift(ref, target, max_shift=15):
+def find_shift(ref, target, max_shift=25):
 
     best_score = -1  # millor puntuació trobada
     best_shift = (0, 0)
@@ -178,7 +167,7 @@ def align_channels(b, g, r):
     return b_aligned[:h, :w], g[:h, :w], r_aligned[:h, :w]
 
 
-def crop_valid_region(b, g, r):
+def delete_black_zones(b, g, r):
 
     # crear màscara de píxels vàlids (no negres)
     mask = (b > 0) & (g > 0) & (r > 0)
@@ -197,18 +186,6 @@ def crop_valid_region(b, g, r):
     return b[y0:y1, x0:x1], g[y0:y1, x0:x1], r[y0:y1, x0:x1]
 
 
-def enhance(img):
-
-    # normalitzar valors entre 0 i 255
-    img_norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX)
-
-    return img_norm.astype(np.uint8)
-
-
-# -------------------------
-# PIPELINE
-# -------------------------
-
 def process_image(path):
 
     start = time.time()
@@ -226,7 +203,7 @@ def process_image(path):
     b, g, r = align_channels(b, g, r)
 
     # eliminar zones negres
-    b, g, r = crop_valid_region(b, g, r)
+    b, g, r = delete_black_zones(b, g, r)
 
     # retall final per netejar vores
     percent = 0.05
@@ -239,9 +216,6 @@ def process_image(path):
 
     # calcular temps
     elapsed = time.time() - start
-
-    # millorar contrast
-    color = enhance(color)
 
     return color, elapsed
 
@@ -256,17 +230,13 @@ def save_image(img, input_path):
     cv2.imwrite(output_path, img)
 
 
-# -------------------------
-# MAIN
-# -------------------------
-
 if __name__ == "__main__":
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     for file in os.listdir(INPUT_DIR):
 
-        if file.lower().endswith((".jpg", ".jpeg", ".png")):
+        if file.lower().endswith((".jpg", ".jpeg", ".tif")):
 
             path = os.path.join(INPUT_DIR, file)
 
