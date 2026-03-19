@@ -7,15 +7,16 @@ from PIL import Image
 # CONFIGURACIÓ
 # =========================
 
-input_path = "fotos/input"
-gt_path = "fotos/groundtruth"
-output_path = "fotos/output"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+input_path = os.path.join(BASE_DIR, "fotos", "input")
+gt_path = os.path.join(BASE_DIR, "fotos", "groundtruth")
+output_path = os.path.join(BASE_DIR, "fotos", "output")
 
 alpha = 0.5
 beta = 60
 thr = 80
 
-video_output = "resultats.avi"
+video_output = os.path.join(BASE_DIR, "resultats.avi")
 
 # crear carpetes output si no existeixen
 os.makedirs(output_path + "/simple", exist_ok=True)
@@ -57,10 +58,10 @@ sigma = sigma.astype(np.float32)
 print("Background model computed")
 
 # guardar mean.png
-cv2.imwrite("mean.png", mu.astype(np.uint8))
+cv2.imwrite(output_path + "/mean.png", mu.astype(np.uint8))
 
 # guardar std.png
-cv2.imwrite("std.png", sigma.astype(np.uint8))
+cv2.imwrite(output_path + "/std.png", sigma.astype(np.uint8))
 
 # TASCA 3 I 4 - FUNCIONS SEGMENTACIÓ
 

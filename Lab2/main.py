@@ -52,7 +52,7 @@ def shift_image(img, dx, dy):
     return result
 
 
-def ncc(a, b):
+def ncc(a, b): # Normalized Cross-Correlation
     # convertir a float per evitar problemes de tipus
     a = a.astype(np.float32)
     b = b.astype(np.float32)
@@ -101,10 +101,9 @@ def find_shift(ref, target, max_shift=25):
 
     return best_shift
 
+def align(ref, target, levels=4):
 
-def pyramid_align(ref, target, levels=4):
-
-    # cas base: imatge petita → cerca directa
+    # cas base: imatge petita fer cerca directa
     if levels == 0 or min(ref.shape) < 64:
         return find_shift(ref, target, 15)
 
@@ -113,7 +112,7 @@ def pyramid_align(ref, target, levels=4):
     target_small = cv2.pyrDown(target)
 
     # calcular desplaçament a escala petita
-    dx, dy = pyramid_align(ref_small, target_small, levels - 1)
+    dx, dy = align(ref_small, target_small, levels - 1)
 
     # escalar el resultat (per tornar a mida original)
     dx *= 2
@@ -142,29 +141,23 @@ def pyramid_align(ref, target, levels=4):
 
     return best_shift
 
-
-# -------------------------
-# ALINEACIÓ I PROCESSAMENT
-# -------------------------
-
 def align_channels(b, g, r):
 
-    # fem servir el canal verd com a referència
-    ref = g
+    ref = b
 
     # calcular desplaçaments
-    shift_b = pyramid_align(ref, b)
-    shift_r = pyramid_align(ref, r)
+    shift_g = align(ref, g)
+    shift_r = align(ref, r)
 
     # aplicar desplaçaments
-    b_aligned = shift_image(b, *shift_b)
+    g_aligned = shift_image(g, *shift_g)
     r_aligned = shift_image(r, *shift_r)
 
     # ajustar mida comuna (evitar diferències)
-    h = min(b_aligned.shape[0], g.shape[0], r_aligned.shape[0])
-    w = min(b_aligned.shape[1], g.shape[1], r_aligned.shape[1])
+    h = min(g_aligned.shape[0], g.shape[0], r_aligned.shape[0])
+    w = min(g_aligned.shape[1], g.shape[1], r_aligned.shape[1])
 
-    return b_aligned[:h, :w], g[:h, :w], r_aligned[:h, :w]
+    return b[:h, :w], g_aligned[:h, :w], r_aligned[:h, :w]
 
 
 def delete_black_zones(b, g, r):
@@ -236,7 +229,7 @@ if __name__ == "__main__":
 
     for file in os.listdir(INPUT_DIR):
 
-        if file.lower().endswith((".jpg", ".jpeg", ".tif")):
+        if file.lower().endswith((".jpg", ".tif")):
 
             path = os.path.join(INPUT_DIR, file)
 
@@ -244,6 +237,5 @@ if __name__ == "__main__":
 
             img, t = process_image(path)
 
-            if img is not None:
-                save_image(img, path)
-                print(f"Temps: {t:.3f} s")
+            save_image(img, path)
+            print(f"Temps: {t:.3f} s")
