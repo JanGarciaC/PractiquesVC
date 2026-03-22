@@ -71,6 +71,72 @@ def ncc(a, b): # Normalized Cross-Correlation
     # retornem la correlació
     return np.sum(a*b) / denom
 
+"""
+Funcions de metriques no utilitzades:
+
+def correlation_spatial(a, b):
+
+    # convertir a float
+    a = a.astype(np.float32)
+    b = b.astype(np.float32)
+
+    # invertir la imatge b (flip vertical + horitzontal)
+    b_flipped = np.flipud(np.fliplr(b))
+
+    # fer convolució amb OpenCV
+    result = cv2.filter2D(a, -1, b_flipped)
+
+    # retornem el màxim valor (millor coincidència)
+    return np.max(result)
+
+
+def correlation_fourier(a, b):
+
+    a = a.astype(np.float32)
+    b = b.astype(np.float32)
+
+    # calcular FFT
+    fa = np.fft.fft2(a)
+    fb = np.fft.fft2(b)
+
+    # producte amb conjugat
+    cross_power = fa * np.conj(fb)
+
+    # tornar a l'espai
+    corr = np.fft.ifft2(cross_power)
+
+    # agafar magnitud
+    corr = np.abs(corr)
+
+    return np.max(corr)
+
+
+def phase_correlation(a, b):
+
+    a = a.astype(np.float32)
+    b = b.astype(np.float32)
+
+    # FFT
+    fa = np.fft.fft2(a)
+    fb = np.fft.fft2(b)
+
+    # producte creuat
+    cross_power = fa * np.conj(fb)
+
+    # normalitzar (només fase)
+    magnitude = np.abs(cross_power)
+    magnitude[magnitude == 0] = 1  # evitar divisió per zero
+
+    cross_power /= magnitude
+
+    # inversa FFT
+    corr = np.fft.ifft2(cross_power)
+
+    corr = np.abs(corr)
+
+    return np.max(corr)
+
+"""
 
 
 def find_shift(ref, target, max_shift=25):
