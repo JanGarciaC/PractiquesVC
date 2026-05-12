@@ -1,0 +1,8 @@
+# Configuració del dataset de globus
+path: C:\Users\janga\Desktop\Balloon\dataset
+train: train/images
+val:   valid/images
+
+nc: 1          # nombre de classes
+names:
+  - balloon    # única classe: globus
