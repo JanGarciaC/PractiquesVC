@@ -1,30 +1,3 @@
-"""
-Inferència — Detector de Globus
-================================
-Detecta globus en imatges, carpetes, vídeos o webcam en temps real.
-
-Ús:
-    # Imatge
-    python inferencia.py --imatge foto.jpg
-    python inferencia.py --imatge foto.jpg --model runs/train_run/weights/best.pt
-
-    # Carpeta d'imatges
-    python inferencia.py --carpeta ./fotos/
-
-    # Vídeo
-    python inferencia.py --video video.mp4
-    python inferencia.py --video video.mp4 --guardar
-
-    # Webcam (índex 0 = càmera principal)
-    python inferencia.py --webcam
-    python inferencia.py --webcam --camera 1    # càmera secundària
-
-Controls en mode vídeo/webcam:
-    Q o ESC  → sortir
-    P        → pausar / reprendre (només vídeo)
-    G        → capturar fotograma i guardar-lo
-"""
-
 import sys
 import time
 import argparse
@@ -59,10 +32,7 @@ except ImportError:
     import matplotlib; matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-
-# ---------------------------------------------------------------------------
 # Cerca automàtica del millor model disponible
-# ---------------------------------------------------------------------------
 def trobar_model(model_arg: str) -> Path:
     if model_arg:
         p = Path(model_arg)
@@ -73,7 +43,6 @@ def trobar_model(model_arg: str) -> Path:
 
     candidates = [
         Path("runs/train_run/weights/best.pt"),
-        Path("runs_fast/train_run/weights/best.pt"),
         *sorted(Path(".").rglob("best.pt")),
     ]
     for c in candidates:
@@ -87,18 +56,8 @@ def trobar_model(model_arg: str) -> Path:
     sys.exit(1)
 
 
-# ---------------------------------------------------------------------------
 # Color dominant d'un patch (per pintar la bbox del color del globus)
-# ---------------------------------------------------------------------------
 def color_dominant(img, x1, y1, x2, y2, margin=6):
-    """
-    Retorna el color dominant BGR del patch interior de la bounding box.
-    Estratègia:
-      1. Retalla el patch amb un marge interior per evitar el fons
-      2. Converteix a HSV i filtra píxels massa foscos o massa blancs (fons/ombres)
-      3. Calcula la mitjana dels píxels restants
-      4. Si el patch és massa petit o queda buit, retorna blanc
-    """
     h_img, w_img = img.shape[:2]
     # Aplica marge interior
     px1 = min(x1 + margin, w_img - 1)
@@ -128,7 +87,6 @@ def color_dominant(img, x1, y1, x2, y2, margin=6):
 
 
 def saturar_color(bgr, factor=1.5):
-    """Augmenta la saturació del color perquè la bbox sigui més visible."""
     pixel = np.array([[list(bgr)]], dtype=np.uint8)
     hsv = cv2.cvtColor(pixel, cv2.COLOR_BGR2HSV).astype(float)
     hsv[0, 0, 1] = min(255, hsv[0, 0, 1] * factor)  # boost saturació
@@ -137,17 +95,8 @@ def saturar_color(bgr, factor=1.5):
     return (int(bgr_out[0, 0, 0]), int(bgr_out[0, 0, 1]), int(bgr_out[0, 0, 2]))
 
 
-# ---------------------------------------------------------------------------
-# Dibuixa bounding boxes del color del globus, sense text
-# ---------------------------------------------------------------------------
+# Dibuixa bounding boxes del color del globus
 def dibuixar_boxes(frame, boxes_data, gruix=3):
-    """
-    Dibuixa les bounding boxes sobre el frame.
-    El color de cada caixa és el color dominant del globus que encercla.
-    No mostra ni etiquetes ni confiança.
-
-    boxes_data: llista de (x1, y1, x2, y2)
-    """
     for (x1, y1, x2, y2) in boxes_data:
         color_bgr = color_dominant(frame, x1, y1, x2, y2)
         color_bgr = saturar_color(color_bgr)
@@ -155,9 +104,7 @@ def dibuixar_boxes(frame, boxes_data, gruix=3):
     return frame
 
 
-# ---------------------------------------------------------------------------
-# HUD: dibuixa stats sobre el frame (FPS, globus, etc.)
-# ---------------------------------------------------------------------------
+# HUD: dibuixa stats sobre el frame (FPS, globus)
 def dibuixar_hud(frame, n_globus, fps, mode=""):
     h, w = frame.shape[:2]
 
@@ -179,9 +126,7 @@ def dibuixar_hud(frame, n_globus, fps, mode=""):
     return frame
 
 
-# ---------------------------------------------------------------------------
-# MODE VIDEO / WEBCAM (logica compartida)
-# ---------------------------------------------------------------------------
+# MODE VIDEO / WEBCAM
 def processar_stream(model, font, conf, iou, output_dir, guardar, es_webcam):
     cap = cv2.VideoCapture(font)
     if not cap.isOpened():
@@ -288,79 +233,7 @@ def processar_stream(model, font, conf, iou, output_dir, guardar, es_webcam):
     print(f"{'='*50}\n")
 
 
-# ---------------------------------------------------------------------------
-# MODE IMATGE / CARPETA
-# ---------------------------------------------------------------------------
-def fer_inferencia_imatges(model, imatges, conf, iou, output_dir, guardar):
-    resultats_totals = []
-
-    for img_path in imatges:
-        img_path = Path(img_path)
-        if not img_path.exists():
-            print(f"  AVIS: No s'ha trobat la imatge: {img_path}")
-            continue
-
-        resultats = model.predict(str(img_path), conf=conf, iou=iou, verbose=False)
-        r = resultats[0]
-        n_globus = len(r.boxes)
-
-        print(f"\n  {img_path.name}")
-        print(f"  {'─'*40}")
-        print(f"  Globus detectats: {n_globus}")
-
-        # Extrau caixes i mostra info per consola
-        boxes_px = []
-        for i, box in enumerate(r.boxes):
-            x1, y1, x2, y2 = [int(v) for v in box.xyxy[0].tolist()]
-            conf_val = box.conf[0].item()
-            boxes_px.append((x1, y1, x2, y2))
-            print(f"  Globus {i+1}: confianca={conf_val:.2f}  "
-                  f"posicio=({x1},{y1})  mida={x2-x1}x{y2-y1}px")
-
-        # Dibuixa les bbox del color del globus sobre la imatge original
-        img_original = cv2.imread(str(img_path))
-        dibuixar_boxes(img_original, boxes_px)
-        out_path = output_dir / f"detectat_{img_path.name}"
-        cv2.imwrite(str(out_path), img_original)
-        print(f"  Guardat: {out_path.resolve()}")
-
-        resultats_totals.append({"path": img_path, "n": n_globus, "resultat": r})
-
-    return resultats_totals
-
-
-def visualitzar_graella(resultats, output_dir):
-    if not resultats:
-        return
-    n = len(resultats)
-    cols = min(3, n)
-    rows = (n + cols - 1) // cols
-    fig, axes = plt.subplots(rows, cols, figsize=(6 * cols, 5 * rows))
-    fig.patch.set_facecolor("#111827")
-    if n == 1:
-        axes = [[axes]]
-    elif rows == 1:
-        axes = [axes]
-    for idx, res in enumerate(resultats):
-        ax = axes[idx // cols][idx % cols]
-        img_rgb = cv2.cvtColor(res["resultat"].plot(), cv2.COLOR_BGR2RGB)
-        ax.imshow(img_rgb)
-        color = "#34d399" if res["n"] > 0 else "#f87171"
-        ax.set_title(f"{res['path'].name}\n{res['n']} globus",
-                     color=color, fontsize=10, pad=6)
-        ax.axis("off")
-    for idx in range(n, rows * cols):
-        axes[idx // cols][idx % cols].axis("off")
-    plt.tight_layout(pad=1.5)
-    out = output_dir / "inferencia_graella.png"
-    plt.savefig(out, dpi=120, bbox_inches="tight", facecolor=fig.get_facecolor())
-    plt.close()
-    print(f"\n  Graella guardada: {out}")
-
-
-# ---------------------------------------------------------------------------
 # Main
-# ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
         description="Detector de globus — imatges, video i webcam",
@@ -368,10 +241,7 @@ def main():
     )
 
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--imatge",  type=str,
-                       help="Ruta a una imatge (jpg, png, ...)")
-    group.add_argument("--carpeta", type=str,
-                       help="Ruta a una carpeta d'imatges")
+
     group.add_argument("--video",   type=str,
                        help="Ruta a un fitxer de video (mp4, avi, ...)")
     group.add_argument("--webcam",  action="store_true",
@@ -387,8 +257,6 @@ def main():
                         help="Llindar IoU per NMS (default: 0.45)")
     parser.add_argument("--guardar", action="store_true",
                         help="Guarda imatges/video amb les deteccions")
-    parser.add_argument("--graella", action="store_true",
-                        help="Graella visual (nomes mode imatge/carpeta)")
     parser.add_argument("--output",  type=str, default="inferencia_output",
                         help="Carpeta de sortida (default: inferencia_output)")
     args = parser.parse_args()
@@ -427,42 +295,7 @@ def main():
         processar_stream(model, str(video_path), args.conf, args.iou,
                          output_dir, args.guardar, es_webcam=False)
 
-    # Imatge / Carpeta
-    else:
-        extensions = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff"}
-        if args.imatge:
-            imatges = [Path(args.imatge)]
-        else:
-            carpeta = Path(args.carpeta)
-            if not carpeta.exists():
-                print(f"ERROR: No s'ha trobat la carpeta: {carpeta}")
-                sys.exit(1)
-            imatges = [p for p in sorted(carpeta.iterdir())
-                       if p.suffix.lower() in extensions]
-            if not imatges:
-                print(f"ERROR: No s'han trobat imatges a: {carpeta}")
-                sys.exit(1)
-            print(f"  Imatges trobades: {len(imatges)}")
-
-        # En mode imatge/carpeta sempre guarda el resultat
-        guardar = True
-        resultats = fer_inferencia_imatges(model, imatges, args.conf, args.iou,
-                                           output_dir, guardar)
-
-        total = len(resultats)
-        amb_globus = sum(1 for r in resultats if r["n"] > 0)
-        total_globus = sum(r["n"] for r in resultats)
-
-        print(f"\n{'='*50}")
-        print(f"  RESUM")
-        print(f"  Imatges processades : {total}")
-        print(f"  Imatges amb globus  : {amb_globus}")
-        print(f"  Total globus det.   : {total_globus}")
-        print(f"{'='*50}")
-
-        if args.graella and resultats:
-            visualitzar_graella(resultats, output_dir)
-
+   
 
 if __name__ == "__main__":
     main()

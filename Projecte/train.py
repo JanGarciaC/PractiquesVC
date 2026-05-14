@@ -1,32 +1,9 @@
-"""
-Detector de globus amb YOLOv8
-==============================
-Entrena un model de detecció d'objectes sobre el dataset de globus
-i avalua els resultats sobre el conjunt de validació.
-
-Estructura esperada del dataset:
-    dataset/
-    ├── train/
-    │   ├── images/   (jpg, png, etc.)
-    │   └── labels/   (fitxers .txt en format YOLO)
-    └── valid/
-        ├── images/
-        └── labels/
-
-Format dels labels (YOLO):
-    <class_id> <x_center> <y_center> <width> <height>
-    Tots els valors normalitzats entre 0 i 1.
-    Si la imatge no té globus, el fitxer .txt és buit.
-"""
-
 import os
 import sys
 import argparse
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# 1. Instal·lació automàtica de dependències
-# ---------------------------------------------------------------------------
+# Instal·lació automàtica de dependències
 def install_dependencies():
     import subprocess
     print("Instal·lant dependències...")
@@ -35,16 +12,12 @@ def install_dependencies():
     print("Dependències instal·lades.\n")
 
 
-# ---------------------------------------------------------------------------
-# 2. Generació del fitxer de configuració YAML
-# ---------------------------------------------------------------------------
+# Generació del fitxer de configuració YAML
 def create_yaml(dataset_root: Path, output_dir: Path) -> Path:
-    """Crea el fitxer data.yaml que YOLOv8 necessita per entrenar."""
     yaml_content = f"""# Configuració del dataset de globus
 path: {dataset_root.resolve()}
 train: train/images
 val:   valid/images
-
 nc: 1          # nombre de classes
 names:
   - balloon    # única classe: globus
@@ -55,11 +28,8 @@ names:
     return yaml_path
 
 
-# ---------------------------------------------------------------------------
-# 3. Entrenament
-# ---------------------------------------------------------------------------
-def train(yaml_path: Path, output_dir: Path, epochs: int, imgsz: int,
-          batch: int, model_size: str):
+# Entrenament
+def train(yaml_path: Path, output_dir: Path, epochs: int, imgsz: int, batch: int, model_size: str):
     import io
     import logging
     import contextlib
@@ -72,41 +42,34 @@ def train(yaml_path: Path, output_dir: Path, epochs: int, imgsz: int,
     print(f"Model base: {base_model}")
     print(f"Epochs: {epochs} | Imgsz: {imgsz} | Batch: {batch}")
 
-    # Carrega el model capturant stdout per extreure el resum
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         model = YOLO(base_model)
 
-    # Mostra nomes la linia "Model summary: ..."
     for line in buf.getvalue().splitlines():
         if "Model summary" in line:
             print(line.strip())
             break
     print()
 
-    # Entrena en silenci mostrant progres propi
     print("Entrenant...", flush=True)
-    with contextlib.redirect_stdout(io.StringIO()):
-        results = model.train(
-            data=str(yaml_path),
-            epochs=epochs,
-            imgsz=imgsz,
-            batch=batch,
-            project=str(output_dir),
-            name="train_run",
-            exist_ok=True,
-            patience=20,
-            save=True,
-            plots=True,
-            verbose=True,
-        )
+    results = model.train(
+        data=str(yaml_path),
+        epochs=epochs,
+        imgsz=imgsz,
+        batch=batch,
+        project=str(output_dir),
+        name="train_run",
+        exist_ok=True,
+        patience=20,
+        save=True,
+        plots=True,
+        verbose=True)
     print("Entrenament completat!")
     return results
 
 
-# ---------------------------------------------------------------------------
-# 4. Avaluació sobre el conjunt de validació
-# ---------------------------------------------------------------------------
+# Avaluació sobre el conjunt de validació
 def evaluate(output_dir: Path, yaml_path: Path, imgsz: int):
     import io
     import contextlib
@@ -124,18 +87,16 @@ def evaluate(output_dir: Path, yaml_path: Path, imgsz: int):
     print("Avaluant...", flush=True)
 
     model = YOLO(str(best_weights))
-    with contextlib.redirect_stdout(io.StringIO()):
-        metrics = model.val(
-            data=str(yaml_path),
-            imgsz=imgsz,
-            split="val",
-            plots=True,
-            save_json=True,
-            project=str(output_dir),
-            name="eval_run",
-            exist_ok=True,
-            verbose=False,
-        )
+    metrics = model.val(
+        data=str(yaml_path),
+        imgsz=imgsz,
+        split="val",
+        plots=True,
+        save_json=True,
+        project=str(output_dir),
+        name="eval_run",
+        exist_ok=True,
+        verbose=False)
 
     print("\n--- Resultats ---")
     print(f"  mAP50       : {metrics.box.map50:.4f}")
@@ -146,52 +107,7 @@ def evaluate(output_dir: Path, yaml_path: Path, imgsz: int):
 
     return metrics
 
-
-# ---------------------------------------------------------------------------
-# 5. Inferència de mostra (opcional)
-# ---------------------------------------------------------------------------
-def run_inference_samples(output_dir: Path, dataset_root: Path, imgsz: int,
-                          num_samples: int = 8):
-    """Executa inferència sobre unes quantes imatges de validació."""
-    from ultralytics import YOLO
-    import random
-
-    best_weights = output_dir / "train_run" / "weights" / "best.pt"
-    if not best_weights.exists():
-        return
-
-    valid_images_dir = dataset_root / "valid" / "images"
-    image_files = list(valid_images_dir.glob("*.[jp][pn]g")) + \
-                  list(valid_images_dir.glob("*.jpeg"))
-
-    if not image_files:
-        print("No s'han trobat imatges de validació per a la inferència.")
-        return
-
-    sample = random.sample(image_files, min(num_samples, len(image_files)))
-
-    model = YOLO(str(best_weights))
-    results = model.predict(
-        source=sample,
-        imgsz=imgsz,
-        conf=0.25,
-        save=True,
-        project=str(output_dir),
-        name="inference_samples",
-        exist_ok=True,
-    )
-
-    print(f"\nInferència completada sobre {len(sample)} imatges.")
-    print(f"Imatges amb deteccions guardades a: {output_dir / 'inference_samples'}\n")
-
-    for r in results:
-        n = len(r.boxes)
-        print(f"  {Path(r.path).name}: {n} globus detectat{'s' if n != 1 else ''}")
-
-
-# ---------------------------------------------------------------------------
-# 6. Punt d'entrada
-# ---------------------------------------------------------------------------
+# Main
 def main():
     parser = argparse.ArgumentParser(description="Entrenament detector de globus YOLOv8")
     parser.add_argument("--dataset",   type=str, default="dataset",
@@ -207,8 +123,7 @@ def main():
     parser.add_argument("--model",     type=str, default="n",
                         choices=["n", "s", "m", "l", "x"],
                         help="Mida del model YOLOv8: n(ano), s(mall), m(edium), l(arge), x")
-    parser.add_argument("--inference", action="store_true",
-                        help="Executa inferència de mostra al final")
+
     args = parser.parse_args()
 
     dataset_root = Path(args.dataset)
@@ -243,9 +158,6 @@ def main():
     yaml_path = create_yaml(dataset_root, output_dir)
     train(yaml_path, output_dir, args.epochs, args.imgsz, args.batch, args.model)
     evaluate(output_dir, yaml_path, args.imgsz)
-
-    if args.inference:
-        run_inference_samples(output_dir, dataset_root, args.imgsz)
 
     print("\nFinalitzat! Revisa els resultats a:", output_dir.resolve())
 
