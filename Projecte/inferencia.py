@@ -54,7 +54,88 @@ def trobar_model(model_arg: str) -> Path:
     print("  Especifica'l amb: --model ruta/al/best.pt")
     print("  O entrena primer amb: python train.py --dataset ./dataset")
     sys.exit(1)
+from collections import OrderedDict
 
+class RastrejadorCentroides:
+    def __init__(self, max_desaparegut=10, max_distancia=80):
+        self.seguent_id = 1
+        self.objectes = OrderedDict()     # Guarda {ID: (centroide, bbox)}
+        self.desapareguts = OrderedDict() # Guarda {ID: frames_desaparegut}
+        
+        # Paràmetres per afinar el rastreig
+        self.max_desaparegut = max_desaparegut 
+        self.max_distancia = max_distancia
+
+    def registrar(self, centroide, bbox):
+        self.objectes[self.seguent_id] = (centroide, bbox)
+        self.desapareguts[self.seguent_id] = 0
+        self.seguent_id += 1
+
+    def donar_baixa(self, id_obj):
+        del self.objectes[id_obj]
+        del self.desapareguts[id_obj]
+
+    def actualitzar(self, rectangules):
+        # Si no detectem res, sumem +1 als desapareguts
+        if len(rectangules) == 0:
+            for id_obj in list(self.desapareguts.keys()):
+                self.desapareguts[id_obj] += 1
+                if self.desapareguts[id_obj] > self.max_desaparegut:
+                    self.donar_baixa(id_obj)
+            return {k: v[1] for k, v in self.objectes.items()}
+
+        # Calcular nous centroides
+        centroides_nous = np.zeros((len(rectangules), 2), dtype="int")
+        for i, (x1, y1, x2, y2) in enumerate(rectangules):
+            cx = int((x1 + x2) / 2.0)
+            cy = int((y1 + y2) / 2.0)
+            centroides_nous[i] = (cx, cy)
+
+        # Si no hi ha objectes rastrejats, els registrem tots
+        if len(self.objectes) == 0:
+            for i in range(len(centroides_nous)):
+                self.registrar(centroides_nous[i], rectangules[i])
+        else:
+            ids_obj = list(self.objectes.keys())
+            dades_obj = list(self.objectes.values())
+            centroides_antics = [d[0] for d in dades_obj]
+
+            # Càlcul de la distància Euclidiana usant NumPy
+            D = np.linalg.norm(np.array(centroides_antics)[:, np.newaxis] - centroides_nous, axis=2)
+            
+            # Ordenem per trobar les distàncies més petites
+            files = D.min(axis=1).argsort()
+            cols = D.argmin(axis=1)[files]
+
+            files_usades = set()
+            cols_usades = set()
+
+            for f, c in zip(files, cols):
+                if f in files_usades or c in cols_usades: continue
+                # Si el moviment d'un frame a l'altre és massa gran, no és el mateix globus
+                if D[f, c] > self.max_distancia: continue
+
+                id_obj = ids_obj[f]
+                self.objectes[id_obj] = (centroides_nous[c], rectangules[c])
+                self.desapareguts[id_obj] = 0
+                files_usades.add(f)
+                cols_usades.add(c)
+
+            # Globus que hem deixat de veure
+            files_no_usades = set(range(D.shape[0])) - files_usades
+            for f in files_no_usades:
+                id_obj = ids_obj[f]
+                self.desapareguts[id_obj] += 1
+                if self.desapareguts[id_obj] > self.max_desaparegut:
+                    self.donar_baixa(id_obj)
+
+            # Globus nous que acaben d'aparèixer
+            cols_no_usades = set(range(D.shape[1])) - cols_usades
+            for c in cols_no_usades:
+                self.registrar(centroides_nous[c], rectangules[c])
+
+        # Retorna només l'ID i les coordenades per poder-les dibuixar
+        return {k: v[1] for k, v in self.objectes.items()}
 
 # Color dominant d'un patch (per pintar la bbox del color del globus)
 def color_dominant(img, x1, y1, x2, y2, margin=6):
@@ -95,12 +176,19 @@ def saturar_color(bgr, factor=1.5):
     return (int(bgr_out[0, 0, 0]), int(bgr_out[0, 0, 1]), int(bgr_out[0, 0, 2]))
 
 
-# Dibuixa bounding boxes del color del globus
-def dibuixar_boxes(frame, boxes_data, gruix=3):
-    for (x1, y1, x2, y2) in boxes_data:
+# Dibuixa bounding boxes del color del globus i posa-hi la ID
+def dibuixar_boxes(frame, objectes_rastrejats, gruix=3):
+    for id_obj, (x1, y1, x2, y2) in objectes_rastrejats.items():
         color_bgr = color_dominant(frame, x1, y1, x2, y2)
         color_bgr = saturar_color(color_bgr)
+        
+        # Dibuixa la capsa
         cv2.rectangle(frame, (x1, y1), (x2, y2), color_bgr, gruix)
+        
+        # Posa el text amb la ID a sobre
+        text = f"ID: {id_obj}"
+        cv2.putText(frame, text, (x1, y1 - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color_bgr, 2)
     return frame
 
 
@@ -163,6 +251,8 @@ def processar_stream(model, font, conf, iou, output_dir, guardar, es_webcam):
     pausat     = False
     stats_globus = []
     frame_mostrat = None
+    
+    rastrejador = RastrejadorCentroides(max_desaparegut=5, max_distancia=120)
 
     while True:
         if not pausat:
@@ -188,9 +278,11 @@ def processar_stream(model, font, conf, iou, output_dir, guardar, es_webcam):
                 x1, y1, x2, y2 = [int(v) for v in box.xyxy[0].tolist()]
                 boxes_px.append((x1, y1, x2, y2))
 
-            # Dibuixa les bbox del color del globus, sense text
+            # Actualitzem el rastrejador amb les capses detectades
+            objectes_rastrejats = rastrejador.actualitzar(boxes_px)
+
             frame_anotat = frame.copy()
-            dibuixar_boxes(frame_anotat, boxes_px)
+            dibuixar_boxes(frame_anotat, objectes_rastrejats)
             estat = "PAUSAT" if pausat else mode_txt
             frame_anotat = dibuixar_hud(frame_anotat, n_globus, fps_calc, estat)
 
